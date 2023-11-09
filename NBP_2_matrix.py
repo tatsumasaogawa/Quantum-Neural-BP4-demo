@@ -1066,4 +1066,11 @@ plt.gca().xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
 plt.grid()
 plt.legend()
 plt.show()
+
+# %%
+decoder.Gx.size()
+# %%
+decoder.Hx.size()
+# %%
+decoder.Gz[0][0]
 # %%
