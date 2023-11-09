@@ -10,12 +10,12 @@ import random
 import matplotlib.pylab as plt
 
 # %%
-class NBP_2_oc(nn.Module):
+class BP_2_oc(nn.Module):
     def __init__(self, n: int, k: int, m: int, m1: int, m2: int, codeType: str, n_iterations: int,
                  folder_weights: str = None,
                  batch_size: int = 1):
         super().__init__()
-        self.name = "Neural_BP_2_Decoder"
+        self.name = "BP_2_Decoder"
         self.batch_size = batch_size
         self.codeType = codeType
         self.n = n # physical qubit の数
@@ -214,9 +214,9 @@ class NBP_2_oc(nn.Module):
         first_part = torch.prod(incoming_messages_sign, dim=2, keepdim=True) # 2 番目の次元の積をとる (batch_size, m, 1)
         # print('prod ok')
         # print(first_part.size())
-        first_part = first_part * self.H # (batch_size, m, 2n), アダマール積
+        first_part = first_part * self.H # (batch_size, m, 2n)
         first_part = first_part / incoming_messages_sign # i' in N(j) \ {i} に対応して, incoming_messages_sign で割る
-        first_part = self.H * first_part # (batch_size, m, 2n), この行はあってもなくても変わらなそう
+        first_part = self.H * first_part # (batch_size, m, 2n)
         assert not torch.isinf(first_part).any()
         assert not torch.isnan(first_part).any()
 
@@ -458,18 +458,19 @@ class NBP_2_oc(nn.Module):
     def ini_weight_as_one(self, n_iterations: int):
         """this function can be configured to determine which parameters are trainable"""
         """この関数は、どのパラメーターが訓練可能かを決定するために設定することができる"""
+        # 11/9 BP は w = 1 で固定 (requires_grad = False)
         self.weights_llr = [] # log-likelihood ratio
         self.weights_cn = []
         self.weights_vn = []
         for i in range(n_iterations):
             if self.one_weight_per_cn:
-                self.weights_cn.append(torch.ones((1, self.m_oc, 1), requires_grad=True, device=self.device))
+                self.weights_cn.append(torch.ones((1, self.m_oc, 1), requires_grad=False, device=self.device))
             else:
-                self.weights_cn.append(torch.ones((1, self.m_oc, 2 * self.n), requires_grad=True, device=self.device))
-            self.weights_llr.append(torch.ones((1, 1, 2 * self.n), requires_grad=True, device=self.device))
+                self.weights_cn.append(torch.ones((1, self.m_oc, 2 * self.n), requires_grad=False, device=self.device))
+            self.weights_llr.append(torch.ones((1, 1, 2 * self.n), requires_grad=False, device=self.device))
             self.weights_vn.append(torch.ones(1, self.m_oc, 2 * self.n, requires_grad=False, device=self.device))
         self.weights_vn.append(torch.ones(1, self.m_oc, 2 * self.n, requires_grad=False, device=self.device))
-        self.weights_llr.append(torch.ones((1, 1, 2 * self.n), requires_grad=True, device=self.device))
+        self.weights_llr.append(torch.ones((1, 1, 2 * self.n), requires_grad=False, device=self.device))
     
 
     def save_weights(self):
@@ -705,13 +706,14 @@ k = 2
 m = 44 #number of checks, can also use 46 or 44
 m1 = m // 2
 m2 = m // 2
-n_iterations = 6
+n_iterations = 32
 codeType = 'GB'
 
 # give parameters for training
 #learning rate
 lr = 0.001
 #training for fixed epsilon_0
+# ep0 = 0.1
 ep0 = 0.1
 #train on errors of weight ranging from r1 to r2
 r1_earlier = 2
@@ -722,14 +724,14 @@ n_batches_earlier = 1500
 batch_size = 100
 
 #initialize the decoder, all weights are set to 1
-decoder = NBP_2_oc(n, k, m, m1,m2, codeType, n_iterations, batch_size=batch_size, folder_weights=None)
+decoder = BP_2_oc(n, k, m, m1,m2, codeType, n_iterations, batch_size=batch_size, folder_weights=None)
 f = plt.figure(figsize=(5, 8))
 plt.spy(decoder.H[0].detach().cpu().numpy(), markersize=1, aspect='auto')
 plt.title("check matrix of the [["+str(n)+","+str(k)+"]] code with "+str(m)+" checks")
 plt.show()
 
 #for comparision, also plot the original check matrix
-decoder_2 = NBP_2_oc(n, k, n-k, m1,m2, codeType, n_iterations, batch_size=batch_size, folder_weights=None)
+decoder_2 = BP_2_oc(n, k, n-k, m1,m2, codeType, n_iterations, batch_size=batch_size, folder_weights=None)
 f = plt.figure(figsize=(5, 3))
 plt.spy(decoder_2.H[0].detach().cpu().numpy(), markersize=1, aspect='auto')
 plt.title("check matrix of the [["+str(n)+","+str(k)+"]] code with "+str(n-k)+" checks")
@@ -742,167 +744,73 @@ path = "./training_results/" + codeType + "_" + str(n) + "_" + str(k) + "_" + st
 if not os.path.exists(path):
     os.makedirs(path)
 
-# %%
-#trainable parameters
-parameters = decoder.weights_llr + decoder.weights_cn
-#use Adam
-optimizer = torch.optim.Adam(parameters, lr=lr)
+# # %%
+# #trainable parameters
+# parameters = decoder.weights_llr + decoder.weights_cn
+# #use Adam
+# optimizer = torch.optim.Adam(parameters, lr=lr)
 
-print('--- Training Metadata ---')
-print(f'Code: n={decoder.n}, k={decoder.k}, PCM rows={decoder.m1},{decoder.m2}')
-print(f'device: {decoder.device}')
-print(f'training ep0 = {ep0}')
-print(f'Decoder: {decoder.name}')
-print(f'decoding iterations = {decoder.n_iterations}')
-print(f'number of batches = {n_batches_earlier}')
-print(f'error patterns per batch = {batch_size}')
-print(f'learning rate = {lr}\n')
+# print('--- Training Metadata ---')
+# print(f'Code: n={decoder.n}, k={decoder.k}, PCM rows={decoder.m1},{decoder.m2}')
+# print(f'device: {decoder.device}')
+# print(f'training ep0 = {ep0}')
+# print(f'Decoder: {decoder.name}')
+# print(f'decoding iterations = {decoder.n_iterations}')
+# print(f'number of batches = {n_batches_earlier}')
+# print(f'error patterns per batch = {batch_size}')
+# print(f'learning rate = {lr}\n')
 
-#pre-training stage, basically only the parameters for the first iteration is trained
-# 2 箇所 or 3 箇所のエラーでサイズ 100 のミニバッチ * 1500 で学習
-loss_pre_train = training_loop(decoder, optimizer, r1_earlier, r2_earlier, ep0, n_batches_earlier, path)
-plot_loss(loss_pre_train, path)
+# #pre-training stage, basically only the parameters for the first iteration is trained
+# # 2 箇所 or 3 箇所のエラーでサイズ 100 のミニバッチ * 1500 で学習
+# loss_pre_train = training_loop(decoder, optimizer, r1_earlier, r2_earlier, ep0, n_batches_earlier, path)
+# plot_loss(loss_pre_train, path)
 
 
-#continue to train with higher weight errors, mostly for the later iterations
-r1_later = 3
-r2_later = 9
+# #continue to train with higher weight errors, mostly for the later iterations
+# r1_later = 3
+# r2_later = 9
 
-n_batches_later = 600
-loss = training_loop(decoder, optimizer, r1_later, r2_later, ep0, n_batches_later, path)
+# n_batches_later = 600
+# loss = training_loop(decoder, optimizer, r1_later, r2_later, ep0, n_batches_later, path)
 
-plot_loss(torch.cat((loss_pre_train, loss) , dim=0), path)
+# plot_loss(torch.cat((loss_pre_train, loss) , dim=0), path)
 
-# loss を pt ファイルで保存
-file_loss = "loss.pt"
-torch.save(torch.cat((loss_pre_train, loss) , dim=0), os.path.join(path, file_loss))
+# # loss を pt ファイルで保存
+# file_loss = "loss.pt"
+# torch.save(torch.cat((loss_pre_train, loss) , dim=0), os.path.join(path, file_loss))
 
-# params を pt ファイルで保存
-params = {
-    'n': n,
-    'k': k,
-    'm': m,
-    'm1': m1,
-    'm2': m2,
-    'n_iterations': n_iterations,
-    'codeType': codeType,
-    'lr': lr,
-    'ep0': ep0,
-    'r1_earlier': r1_earlier,
-    'r2_earlier': r2_earlier,
-    'n_batches_earlier': n_batches_earlier,
-    'r1_later': r1_later,
-    'r2_later': r2_later,
-    'n_batches_later': n_batches_later,
-    'batch_size': batch_size
-}
+# # params を pt ファイルで保存
+# params = {
+#     'n': n,
+#     'k': k,
+#     'm': m,
+#     'm1': m1,
+#     'm2': m2,
+#     'n_iterations': n_iterations,
+#     'codeType': codeType,
+#     'lr': lr,
+#     'ep0': ep0,
+#     'r1_earlier': r1_earlier,
+#     'r2_earlier': r2_earlier,
+#     'n_batches_earlier': n_batches_earlier,
+#     'r1_later': r1_later,
+#     'r2_later': r2_later,
+#     'n_batches_later': n_batches_later,
+#     'batch_size': batch_size
+# }
 
-file_params = "params.pt"
-torch.save(params, os.path.join(path, file_params))
+# file_params = "params.pt"
+# torch.save(params, os.path.join(path, file_params))
 
-# decoder を pt ファイルで保存
-file_decoder = "decoder.pt"
-torch.save(decoder, os.path.join(path, file_decoder))
+# # decoder を pt ファイルで保存
+# file_decoder = "decoder.pt"
+# torch.save(decoder, os.path.join(path, file_decoder))
 
-# %%
-file_decoder = "decoder.pt"
-decoder = torch.load(os.path.join(path, file_decoder))
-
-#%%
-decoder
+# # %%
+# file_decoder = "decoder.pt"
+# decoder = torch.load(os.path.join(path, file_decoder))
 
 # %%
-def forward(self, errorx: torch.Tensor, errorz: torch.Tensor, ep: float, batch_size=1) -> torch.Tensor:
-    """main decoding procedure"""
-    loss_array = torch.zeros(self.batch_size, self.n_iterations).float().to(self.device)
-    
-    # batch_size != self.batch_size のときに例外を投げる
-    assert batch_size == self.batch_size
-
-    self.errorx = errorx.to(self.device)
-    self.errorz = errorz.to(self.device)
-
-    # 2 次信念伝播なので 2 変数
-    self.qx = torch.zeros_like(self.errorx)
-    self.qz = torch.zeros_like(self.errorx)
-    # self.qy = torch.zeros_like(self.errorx)
-    # self.qi = torch.ones_like(self.errorx)
-
-    # x エラーの箇所を 1 にする
-    self.qx[self.errorx == 1] = 1
-    # self.qx[self.errorz == 1] = 0
-
-    # z エラーの箇所を 1 にする
-    self.qz[self.errorz == 1] = 1
-    # self.qz[self.errorx == 1] = 0
-
-    # 一旦 z エラーの箇所を y エラーとしてから, x エラーが無い箇所を除く
-    # self.qy[self.errorz == 1] = 1
-    # self.qy[self.errorx != self.errorz] = 0
-
-    # qi は初め 1 で初期化していることに注意
-    # エラーのある箇所を除く
-    # self.qi[self.errorx == 1] = 0
-    # self.qi[self.errorz == 1] = 0
-
-    self.syn = self.calculate_self_syn()
-
-    #initial LLR to, first equation in [1,Sec.II-C]
-    # physical error rate を ep とした llr
-    llr = np.log((1 - ep) / ep)
-
-    messages_cn_to_vn = torch.zeros((batch_size, self.m_oc, 2 * self.n)).to(self.device)
-    self.batch_size = batch_size
-
-    # initlize VN message
-    messages_vn_to_cn, _ = self.variable_node_update(messages_cn_to_vn, llr, self.weights_vn[0],
-                                                        self.weights_llr[0])
-    # print('variable node update ok')
-
-    # iteratively decode, decode will continue till the max. iteration, even if the syndrome already matched
-    # 反復デコードでは、シンドロームがすでにマッチしていても、デコードは最大反復まで続けられる。
-    for i in range(self.n_iterations):
-
-        assert not torch.isnan(self.weights_llr[i]).any()
-        assert not torch.isnan(self.weights_cn[i]).any()
-        assert not torch.isnan(messages_cn_to_vn).any()
-
-        # check node update:
-        messages_cn_to_vn = self.check_node_update(messages_vn_to_cn, self.weights_cn[i])
-        # print('check node update ok')
-
-        assert not torch.isnan(messages_cn_to_vn).any()
-        assert not torch.isinf(messages_cn_to_vn).any()
-
-        # variable node update:
-        messages_vn_to_cn, Gamma = self.variable_node_update(messages_cn_to_vn, llr, self.weights_vn[i + 1],
-                                                                    self.weights_llr[i + 1])
-
-        assert not torch.isnan(messages_vn_to_cn).any()
-        assert not torch.isinf(messages_vn_to_cn).any()
-        assert not torch.isnan(Gamma).any()
-        assert not torch.isinf(Gamma).any()
-
-        loss_array[:, i] = self.loss(Gamma)
-
-
-    _, minIdx = torch.min(loss_array, dim=1, keepdim=False)
-
-
-    loss = torch.zeros(self.batch_size, ).float().to(self.device)
-    #take average of the loss for the first iterations till the loss is minimized
-    #損失が最小になるまでの、最初の反復の損失の平均をとる。
-    for b in range(batch_size):
-        for idx in range(minIdx[b] + 1):
-            loss[b] += loss_array[b, idx]
-        loss[b] /= (minIdx[b] + 1)
-
-    loss = torch.sum(loss, dim=0) / self.batch_size
-
-    assert not torch.isnan(loss)
-    assert not torch.isinf(loss)
-    return loss
-
 def decode(decoder, errorx: torch.Tensor, errorz: torch.Tensor, ep: float, batch_size=1):
     """main decoding procedure"""
     loss_array = torch.zeros(decoder.batch_size, decoder.n_iterations).float().to(decoder.device)
@@ -997,7 +905,8 @@ def decode(decoder, errorx: torch.Tensor, errorz: torch.Tensor, ep: float, batch
 fers = torch.zeros(n)
 n_batches = 200
 
-for w in tqdm(range(1, decoder.n + 1)):
+# for w in tqdm(range(1, decoder.n + 1)):
+for w in tqdm(range(1, 2)):
     n_fail = 0
 
     for j in range(n_batches):
@@ -1031,7 +940,7 @@ torch.save(fers, os.path.join(path, file_fers))
 # %%
 fers
 # %%
-Gamma.size()
+Gamma
 # %%
 errorx.size()
 # %%
@@ -1052,25 +961,4 @@ decoder.n
 # %%
 decoder.code
 
-# %%
-import matplotlib.ticker as ticker
-
-
-x = np.array(range(1, 47))
-plt.plot(x, fers, label='nbp', marker='o')
-# plt.plot(x, fers_bp_gb, label='bp', marker='x')
-plt.xlabel('Error weight')
-plt.ylabel('FER')
-plt.xlim(0, 20)
-plt.gca().xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
-plt.grid()
-plt.legend()
-plt.show()
-
-# %%
-decoder.Gx.size()
-# %%
-decoder.Hx.size()
-# %%
-decoder.Gz[0][0]
 # %%
